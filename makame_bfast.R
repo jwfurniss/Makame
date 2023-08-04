@@ -1,8 +1,7 @@
 
 packages<-(c("sf", "gdalcubes", "rstac", "terra",
              "torch", "dplyr", "dismo", "exactextractr", 
-             "ape", "reshape2","ggplot2", "parallel",
-             "caret","randomForest","VSURF"))
+             "ape", "reshape2","ggplot2", "parallel"))
 
 installed_packages <- packages %in% rownames(installed.packages())
 if (any(installed_packages == FALSE)) {
@@ -23,7 +22,8 @@ if (!file.exists(output.dir)) {
   dir.create(output.dir)
 }
 
-sf_pa<-st_read("ForestBenchmark_2022_LeakageBelt.shp")  #Define Project Area
+#sf_pa<-st_read("ForestBenchmark_2022_LeakageBelt.shp")  #Define Project Area
+sf_pa<-st_read("D://TerraCarbon_DropBox//TerraCarbon Dropbox//John Furniss//Makame REDD Project Folder//Makame Internal Folder//Makame GIS data//Monitoring_2023//MK_2022_PALB_F.shp")
 
 ## Image Prep Input ##
 
@@ -35,7 +35,7 @@ sf_pa<-st_read("ForestBenchmark_2022_LeakageBelt.shp")  #Define Project Area
 start_date = "2020-01-01"
 end_date = "2023-08-03"  
 
-max_cc = 50
+max_cc = 30
 band_list=c("B04","B08","SCL")
 
 
@@ -89,7 +89,7 @@ roi_ext<<-list(left = roi_prj[[1]],
 
 roi_ext$t0 = start_date
 roi_ext$t1 = end_date
-v.overview = cube_view(extent=roi_ext, dx = 100, dy = 100, dt="P1M", srs = col.epsg,
+v.overview = cube_view(extent=roi_ext, dx = 30, dy = 30, dt="P1M", srs = col.epsg,
                        aggregation = "mean", resampling = "bilinear")
 
 
@@ -103,6 +103,7 @@ print(start.time.stac)
 
 x = raster_cube(col, v.overview, mask = cloud_mask)|>
   select_bands(c("B04","B08"))|>
+  filter_geom(sf_pa, "EPSG:4326")|>
   reduce_time(names = c("change_date", "change_magnitude"), FUN = function(x) {
     knr <- exp(-((x["B08",]/10000)-(x["B04",]/10000))^2/(2))
     kndvi <- (1-knr) / (1+knr)   
@@ -118,7 +119,7 @@ x = raster_cube(col, v.overview, mask = cloud_mask)|>
       return(c(NA,NA))
     })
   }) |>
-  write_tif(dir = output.dir,prefix = "2023_Makame_Bfast_kndvi_100m_50cc_")
+  write_tif(dir = output.dir,prefix = "2023_Makame_Bfast_kndvi_30m_30cc_")
 
 end.time.stac<-Sys.time()
 print(end.time.stac-start.time.stac)
