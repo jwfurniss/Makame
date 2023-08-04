@@ -1,7 +1,7 @@
 
 packages<-(c("sf", "gdalcubes", "rstac", "terra",
              "torch", "dplyr", "dismo", "exactextractr", 
-             "ape", "reshape2","ggplot2", "parallel","RStoolbox",
+             "ape", "reshape2","ggplot2", "parallel",
              "caret","randomForest","VSURF"))
 
 installed_packages <- packages %in% rownames(installed.packages())
@@ -14,7 +14,7 @@ invisible(lapply(packages, library, character.only = TRUE))
 rm(packages)
 rm(installed_packages)
 ## General ## 
-setwd("C://GIS//Tanzania//Makame") # Set working directory to whatever folder you would like where data can be written and retrieved
+setwd("D://Makame") # Set working directory to whatever folder you would like where data can be written and retrieved
 
 gdalcubes_options(parallel = detectCores()-2) # Option to enable parallel processing for gdalcubes
 
@@ -23,7 +23,7 @@ if (!file.exists(output.dir)) {
   dir.create(output.dir)
 }
 
-sf_pa<-st_read("MK_LB_BBox.shp")  #Define Project Area
+sf_pa<-st_read("ForestBenchmark_2022_LeakageBelt.shp")  #Define Project Area
 
 ## Image Prep Input ##
 
@@ -32,10 +32,10 @@ sf_pa<-st_read("MK_LB_BBox.shp")  #Define Project Area
 #end_date = "2023-03-31"
 
 ## Long Dry
-start_date = "2021-01-01"
+start_date = "2020-01-01"
 end_date = "2023-08-03"  
 
-max_cc = 05
+max_cc = 50
 band_list=c("B04","B08","SCL")
 
 
@@ -68,7 +68,7 @@ while( is.null(stac) && attempt <= 20 ) {
 col<-stac_image_collection(stac$features, 
                            out_file = tempfile(fileext = ".sqlite"),
                            asset_names = band_list,
-                           property_filter = function(x) {x[["platform"]] !='landsat-7'}) #convert stac to image collection, keep qa_pixel band for cloud masking, remove any images from Landsat-7
+                           property_filter = function(x) {x[["datetime"]] !="2022-01-28T07:40:49.024000Z"}) #convert stac to image collection, keep qa_pixel band for cloud masking, remove any images from Landsat-7
 
 
 col.prj<<-stac$features[[1]]$properties$`proj:epsg` #function to call projection from first tile to create data cube
@@ -89,7 +89,7 @@ roi_ext<<-list(left = roi_prj[[1]],
 
 roi_ext$t0 = start_date
 roi_ext$t1 = end_date
-v.overview = cube_view(extent=roi_ext, dx = 10, dy = 10, dt="P1M", srs = col.epsg,
+v.overview = cube_view(extent=roi_ext, dx = 100, dy = 100, dt="P1M", srs = col.epsg,
                        aggregation = "mean", resampling = "bilinear")
 
 
@@ -109,18 +109,17 @@ x = raster_cube(col, v.overview, mask = cloud_mask)|>
     if (all(is.na(kndvi))) {
       return(c(NA,NA))
     }
-    kndvi_ts = ts(kndvi, start = c(2021, 1), frequency = 12)
+    kndvi_ts = ts(kndvi, start = c(2020, 1), frequency = 12)
     library(bfast)
     tryCatch({
-      result = bfastmonitor(kndvi_ts, start = c(2023,1), level = 0.01)
+      result = bfastmonitor(kndvi_ts, start = c(2022,7), level = 0.01)
       return(c(result$breakpoint, result$magnitude))
     }, error = function(x) {
       return(c(NA,NA))
     })
   }) |>
-  write_tif(dir = output.dir,prefix = "2023_Makame_Bfast_kndvi")
+  write_tif(dir = output.dir,prefix = "2023_Makame_Bfast_kndvi_100m_50cc_")
 
-  write_tif(dir = output.dir, prefix = paste0("2023_c",max_cc,"_P15D_median_LDry_all","_", sep=""))
 end.time.stac<-Sys.time()
 print(end.time.stac-start.time.stac)
 plotRGB(rast(x), r=4, g=3, b = 2)
