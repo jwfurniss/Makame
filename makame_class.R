@@ -32,7 +32,7 @@ poly<-vect("MK_2023_training.shp")
 table(poly$MK_Class)
 
 ###########Set seed to make sure the same random sample is selected next time########
-set.seed(25) 
+set.seed(24) 
 ###Split the dataset into test and training dataset######
 
 polysplit <- createDataPartition(poly$MK_Class,
@@ -44,7 +44,10 @@ polysplit <- createDataPartition(poly$MK_Class,
 training_poly <- poly[ polysplit,]
 testing_poly  <- poly[-polysplit,]
 
-training_points<-spatSample(training_poly, size = 70000, method = "random", strata = "MK_Class")
+sample_rast<-rasterize(training_poly,stack[[1]],"MK_Class")
+
+training_points<-spatSample(sample_rast, size = 10000, method = "stratified", as.points = TRUE, xy=TRUE)
+
 table(training_points$MK_Class)
 
 training_sample<-st_as_sf(training_points) %>% group_by(MK_Class) %>% slice_sample(n = min(table(training_points$MK_Class)))
@@ -57,6 +60,9 @@ training_data<-exact_extract(stack, training_buffer, 'mean')
 
 
 training_data$Class<-as.factor(training_sample$MK_Class)
+
+levels(training_data$Class)<-c("Ag","Forest","Grass","L.Forest","Water")
+
 trainDF<-Filter(function(x)!all(is.na(x)), training_data)
 
 
@@ -181,17 +187,17 @@ caret::confusionMatrix(data = vsvmplsClasses, vrf.testDF$Class)
 train_x<-vrf.trainDF[,1:nlyr(vsurf_norm)]
 train_y<-decodeClassLabels(vrf.trainDF$Class)
 
-mlp.nnet<-mlp(x = train_x,
+mlp.50.50<-mlp(x = train_x,
               y = train_y,
               size = c(50,50),
               maxit = 10000)
 
 
-mlpplsClasses<-as.factor(encodeClassLabels(predict(mlp.nnet,vrf.testDF[,1:nlyr(vsurf_norm)])))
+mlpplsClasses.50.50<-as.factor(encodeClassLabels(predict(mlp.50.50,vrf.testDF[,1:nlyr(vsurf_norm)])))
 
-levels(mlpplsClasses)<-c("Ag","Forest","Grass","L.Forest","Water")
+levels(mlpplsClasses.50.50)<-c("Ag","Forest","Grass","L.Forest","Water")
 
-caret::confusionMatrix(mlpplsClasses, testDF$Class)
+caret::confusionMatrix(mlpplsClasses.50.50, testDF$Class)
 
 ###### Predict ####### 
 
@@ -199,10 +205,10 @@ names(vsurf_norm)<-names(subset(vrf.trainDF, select= -Class))
 
 vrf.class<-terra::predict(vsurf_norm, vrf, na.rm = TRUE)
 
-writeRaster(vrf.class, "C://GIS//Tanzania//Makame//0802WF//MK_vrf_vsurf_class_0802_2.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
+writeRaster(vrf.class, "C://GIS//Tanzania//Makame//0802WF//MK_vrf_vsurf_class_0804.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
 
 vrf.class.probs<-terra::predict(vsurf_norm, vrf ,type = 'prob', na.rm = TRUE)
-writeRaster(vrf.class.probs, "C://GIS//Tanzania//Makame//0802WF//MK_vrf_vsurf_probs_0802_2.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
+writeRaster(vrf.class.probs, "C://GIS//Tanzania//Makame//0802WF//MK_vrf_vsurf_probs_0804.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
 ###
 vsvm.class<-terra::predict(vsurf_norm, vsvm, na.rm = TRUE)
 
@@ -211,11 +217,11 @@ writeRaster(vsvm.class, "C://GIS//Tanzania//Makame//0802WF//MK_vsvm_vsurf_class_
 vsvm.class.probs<-terra::predict(vsurf_norm, vsvm ,type = 'prob', na.rm = TRUE)
 writeRaster(vsvm.class.probs, "C://GIS//Tanzania//Makame//0802WF//MK_vsvm_vsurf_probs_0802.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
 
-
-vmlp.class<-terra::predict(vsurf_norm, mlp.nnet, na.rm = TRUE)
+start.time<-Sys.time()
+vmlp.class<-terra::predict(vsurf_norm, mlp.50.50, na.rm = TRUE)
+end.time<-Sys.time()
 vmlp.class.encode<-encodeClassLabels(vlmp.class)
-
-writeRaster(vmlp.class, "C://GIS//Tanzania//Makame//0802WF//MK_vmlp_vsurf_class_0802.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
+writeRaster(vmlp.class, "C://GIS//Tanzania//Makame//0802WF//MK_mlp_50.50_vsurf_class_0802.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
 
 vmlp.class.probs<-terra::predict(vsurf_norm, vlmp ,type = 'prob', na.rm = TRUE)
 writeRaster(vrf.class.probs, "C://GIS//Tanzania//Makame//0802WF//MK_vmlp_vsurf_probs_0802.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
