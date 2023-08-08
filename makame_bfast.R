@@ -26,6 +26,9 @@ if (!file.exists(output.dir)) {
 sf_pa<-st_read("MK_2022_PALB_F.shp")  #Define Project Area
 #sf_pa<-st_read("/vsicurl/https://github.com/jwfurniss/Makame/blob/main/MK_2022_PALB_F.shp")
 
+#sf_pa<-st_read("ForestBenchmark_2022_LeakageBelt.shp")  #Define Project Area
+
+
 ## Image Prep Input ##
 
 ## Short Dry
@@ -90,6 +93,7 @@ roi_ext<<-list(left = roi_prj[[1]],
 
 roi_ext$t0 = start_date
 roi_ext$t1 = end_date
+
 v.overview = cube_view(extent=roi_ext, dx = 30, dy = 30, dt="P3M", srs = col.epsg,
                        aggregation = "mean", resampling = "bilinear")
 
@@ -120,6 +124,7 @@ x = raster_cube(col, v.overview, mask = cloud_mask)|>
       return(c(NA,NA))
     })
   }) |>
+
   write_tif(dir = output.dir,prefix = "2023_Makame_Bfast_kndvi_30m_30cc_P3M_")
 
 end.time.stac<-Sys.time()
