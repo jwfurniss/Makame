@@ -1,8 +1,7 @@
 
 packages<-(c("sf", "gdalcubes", "rstac", "terra",
              "torch", "dplyr", "dismo", "exactextractr", 
-             "ape", "reshape2","ggplot2", "parallel","RStoolbox",
-             "caret","randomForest","VSURF"))
+             "reshape2","ggplot2", "parallel",))
 
 installed_packages <- packages %in% rownames(installed.packages())
 if (any(installed_packages == FALSE)) {
@@ -18,7 +17,7 @@ setwd("C://GIS//Tanzania//Makame") # Set working directory to whatever folder yo
 
 gdalcubes_options(parallel = detectCores()-2) # Option to enable parallel processing for gdalcubes
 
-output.dir<-paste("./Sent2") # create a directory to store files 
+output.dir<-paste("./Sent2_bfast") # create a directory to store files 
 if (!file.exists(output.dir)) {
   dir.create(output.dir)
 }
@@ -32,16 +31,16 @@ sf_pa<-st_read("MK_LB_BBox.shp")  #Define Project Area
 #end_date = "2023-03-31"
 
 ## Long Dry
-start_date = "2023-07-01"
-end_date = "2023-07-25"  
+start_date = "2020-01-01"
+end_date = "2020-12-31"  
 
-max_cc = 50
-band_list=c("B01","B02","B03","B04","B05","B06","B07","B08","B8A","B09","B11","B12","SCL")
-
+max_cc = 30
+#band_list=c("B01","B02","B03","B04","B05","B06","B07","B08","B8A","B09","B11","B12","SCL")
+band_list=c("B01","B03","B05","B09","B12","SCL")
 
   sf_pa<-st_transform(sf_pa$geometry, 4326) #transform PA to lat/long for search purposes
-  sf_pa_buffer<-st_buffer(st_zm(sf_pa), 10000, 10) #### 10k buffer around LB
-  
+  #sf_pa_buffer<-st_buffer(st_zm(sf_pa), 10000, 10) #### 10k buffer around LB
+  sf_pa_buffer<-st_buffer(st_zm(sf_pa), 10, 10) #### 10m buffer around LB
   roi<-st_bbox(sf_pa_buffer) #get Bounding Box of PA Buffer area
   roi_list<-c(roi[[1]], roi[[2]], roi[[3]], roi[[4]]) # transform Bounding Box to list of coordinates
   
@@ -89,29 +88,41 @@ band_list=c("B01","B02","B03","B04","B05","B06","B07","B08","B8A","B09","B11","B
       
       roi_ext$t0 = start_date
       roi_ext$t1 = end_date
+      #v.overview = cube_view(extent=roi_ext, dx = 10, dy = 10, dt="P15D", srs = col.epsg,
+      #                       aggregation = "mean", resampling = "bilinear")
       v.overview = cube_view(extent=roi_ext, dx = 10, dy = 10, dt="P15D", srs = col.epsg,
                              aggregation = "mean", resampling = "bilinear")
-      
       
       cloud_mask = image_mask("SCL", values =c(3,8,9)) # Mask Sentinel clouds  # Mask Landsat clouds 
       
       #Function to create data cube and write .tif files to output directory
       #Need final pipe function as write_tif to make X into list of file paths, which we can export into raster stack
       
+      #start.time.stac<-Sys.time()
+      #print(start.time.stac)
+      
+      #x = raster_cube(col, v.overview, mask = cloud_mask)|>
+      # select_bands(c("B01","B02","B03","B04","B05","B06","B07","B08","B8A","B09","B11","B12"))|>
+      #  reduce_time(c("median(B01)","median(B02)","median(B03)","median(B04)","median(B05)","median(B06)",
+      #                "median(B07)","median(B08)","median(B8A)","median(B09)","median(B11)","median(B12)"))|>
+      #  write_tif(dir = output.dir, prefix = paste0("2023_c",max_cc,"_P15D_median_LDry_all","_", sep=""))
+      #end.time.stac<-Sys.time()
+      #print(end.time.stac-start.time.stac)
+      #plotRGB(rast(x), r=4, g=3, b = 2)
+      
       start.time.stac<-Sys.time()
       print(start.time.stac)
       
       x = raster_cube(col, v.overview, mask = cloud_mask)|>
-        select_bands(c("B01","B02","B03","B04","B05","B06","B07","B08","B8A","B09","B11","B12"))|>
-        reduce_time(c("median(B01)","median(B02)","median(B03)","median(B04)","median(B05)","median(B06)",
-                      "median(B07)","median(B08)","median(B8A)","median(B09)","median(B11)","median(B12)"))|>
-        write_tif(dir = output.dir, prefix = paste0("2023_c",max_cc,"_P15D_median_LDry_all","_", sep=""))
+       select_bands(c("B01","B03","B05","B09","B12"))|>
+       reduce_time(c("median(B01)","median(B03)","median(B05)","median(B09)","median(B12)"))|>
+       write_tif(dir = output.dir, prefix = paste0("2020_c",max_cc,"_P1Y_pca_in_median","_", sep=""))
       end.time.stac<-Sys.time()
       print(end.time.stac-start.time.stac)
-      plotRGB(rast(x), r=4, g=3, b = 2)
+
       
       
-##### NDFI ######
+      ##### NDFI ######
       img<-raster::brick(x)
       
       em<-(data=matrix(c(119,1514,1799,4031,

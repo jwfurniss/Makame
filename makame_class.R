@@ -2,7 +2,7 @@ setwd("C://GIS//Tanzania//Makame") # Set working directory to whatever folder yo
 
 packages<-(c("sf", "gdalcubes", "rstac", "terra",
              "torch", "dplyr", "dismo", "exactextractr", 
-             "ape", "reshape2","ggplot2", "parallel","RStoolbox",
+             "reshape2","ggplot2", "parallel",
              "caret","randomForest","VSURF","RSNNS"))
 
 installed_packages <- packages %in% rownames(installed.packages())
@@ -22,9 +22,9 @@ if (!file.exists(output.dir)) {
 }
 
 
-opt<-rast("./Sent2/2023_c10_P15D_median_LDry_all_2023-07-01.tif")
-s.1<-rast("./0731WF//MK_2023_VVVH_LDry_prj_rnm.tif")
-si<-rast("./0731WF//2MK_2023_LDry_SI_stack.tif")
+opt<-rast("./Sent2/2023_c5_P15D_median_SDry_all_2023-01-01.tif")
+s.1<-rast("./0731WF//MK_2023_SDry_SAR.tif")
+si<-rast("./0731WF//3MK_2023_SDry_SI_stack.tif")
 stack<-c(opt,si,s.1)
 stack<-stack[[-28:-29]]
 
@@ -32,7 +32,7 @@ poly<-vect("MK_2023_training.shp")
 table(poly$MK_Class)
 
 ###########Set seed to make sure the same random sample is selected next time########
-set.seed(24) 
+set.seed(2) 
 ###Split the dataset into test and training dataset######
 
 polysplit <- createDataPartition(poly$MK_Class,
@@ -46,7 +46,7 @@ testing_poly  <- poly[-polysplit,]
 
 sample_rast<-rasterize(training_poly,stack[[1]],"MK_Class")
 
-training_points<-spatSample(sample_rast, size = 10000, method = "stratified", as.points = TRUE, xy=TRUE)
+training_points<-spatSample(sample_rast, size = 1000, method = "stratified", as.points = TRUE, xy=TRUE)
 
 table(training_points$MK_Class)
 
@@ -74,7 +74,10 @@ Fitcontrol <- trainControl("repeatedcv",
                            number=10, 
                            repeats=10,
                            classProbs = TRUE)
-#### RF ####
+
+####### Un-Reduced Classifications #####
+    
+  #### RF ####
 
 rf<-caret::train(Class ~.,
                   data = trainDF, 
@@ -94,21 +97,23 @@ rfplsClasses <- predict(rf, newdata = testDF)
 caret::confusionMatrix(data = rfplsClasses, testDF$Class)
 
 
-#### SVM #####
-svm<-caret::train(Class ~.,
-                   data = trainDF, 
-                   method= "svmRadial",
-                   trControl = Fitcontrol,
-                   preProcess = c("center", "scale"),
-                   tunelength = 10)
+    #### SVM #####
+# svm<-caret::train(Class ~.,
+#                   data = trainDF, 
+#                   method= "svmRadial",
+#                   trControl = Fitcontrol,
+#                   preProcess = c("center", "scale"),
+#                   tunelength = 10)
 
-print(svm)
-svm$finalModel
-summary(svm)
+# print(svm)
+# svm$finalModel
+# summary(svm)
 
-svmplsClasses <- predict(svm, newdata = testDF)
-caret::confusionMatrix(data = svmplsClasses, testDF$Class)
+# svmplsClasses <- predict(svm, newdata = testDF)
+# caret::confusionMatrix(data = svmplsClasses, testDF$Class)
 
+
+####### Variable Reduction ######
 
 
 ### VSURF ###
@@ -120,6 +125,8 @@ v.rf$mean.perf
 
 head(trainDF[c(v.rf$varselect.pred)])
 
+
+# Normalization of VSURF selected variables for further classification and prediction
 vsurf.stack<-stack[[c(v.rf$varselect.pred)]]
 
 for(i in seq(1:nlyr(vsurf.stack))){
@@ -136,14 +143,18 @@ for(i in seq(1:nlyr(vsurf.stack))){
   gc()
 }
 
+# Create new training dataset from normalized data
 vrf.training_data<-exact_extract(vsurf_norm, training_buffer, 'mean')
+vrf.training_data$Class<-as.factor(training_buffer$MK_Class)
 
-vrf.training_data$Class<-training_buffer$MK_Class
+levels(vrf.training_data$Class)<-c("Ag","Forest","Grass","L.Forest","Water")
 
 vrf.trainDF<-vrf.training_data
 
+# Create testing data from retained polygons
 vrf.testDF <- exact_extract(vsurf_norm, st_as_sf(testing_poly), 'mean')
 vrf.testDF$Class<-as.factor(testing_poly$MK_Class)
+levels(vrf.testDF$Class)<-c("Ag","Forest","Grass","L.Forest","Water")
 
 
 
@@ -161,12 +172,14 @@ vrfVarImp2<-importance(vrf$finalModel, type=1, scale=TRUE)
 plot(vrfVarImp2)
 importance(vrf$finalModel)
 
-rfplsClasses <- predict(vrf, newdata = vrf.testDF)
+vrfplsClasses <- predict(vrf, newdata = vrf.testDF)
 
-caret::confusionMatrix(data = rfplsClasses, as.factor(vrf.testDF$Class))
+levels(vrfplsClasses)<-c("Ag","Forest","Grass","L.Forest","Water")
+
+caret::confusionMatrix(data = vrfplsClasses, as.factor(vrf.testDF$Class))
 
 
-#### SVM #####
+#### SVM  using VSURF reduced variables #####
 vsvm<-caret::train(Class ~.,
             data = vrf.trainDF, 
             method= "svmPoly",
@@ -179,49 +192,39 @@ vsvm$finalModel
 summary(vsvm)
 
 vsvmplsClasses <- predict(vsvm, newdata = vrf.testDF)
+
+levels(vsvmplsClasses)<-c("Ag","Forest","Grass","L.Forest","Water")
+
 caret::confusionMatrix(data = vsvmplsClasses, vrf.testDF$Class)
 
 
-#### MLP #####
+#### MLP using VSURF reduced Variables #####
 
 train_x<-vrf.trainDF[,1:nlyr(vsurf_norm)]
 train_y<-decodeClassLabels(vrf.trainDF$Class)
 
-mlp.50.50<-mlp(x = train_x,
+vmlp<-mlp(x = train_x,
               y = train_y,
-              size = c(50,50),
+              size = c(10,10),
               maxit = 10000)
 
 
-mlpplsClasses.50.50<-as.factor(encodeClassLabels(predict(mlp.50.50,vrf.testDF[,1:nlyr(vsurf_norm)])))
+vmlpplsClasses<-as.factor(encodeClassLabels(predict(vmlp,vrf.testDF[,1:nlyr(vsurf_norm)])))
 
-levels(mlpplsClasses.50.50)<-c("Ag","Forest","Grass","L.Forest","Water")
+levels(vmlpplsClasses)<-c("Ag","Forest","Grass","L.Forest","Water")
 
-caret::confusionMatrix(mlpplsClasses.50.50, testDF$Class)
+caret::confusionMatrix(vmlpplsClasses, vrf.testDF$Class)
 
 ###### Predict ####### 
 
 names(vsurf_norm)<-names(subset(vrf.trainDF, select= -Class))
 
+# Classification Raster
 vrf.class<-terra::predict(vsurf_norm, vrf, na.rm = TRUE)
 
-writeRaster(vrf.class, "C://GIS//Tanzania//Makame//0802WF//MK_vrf_vsurf_class_0804.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
+writeRaster(vrf.class, "C://GIS//Tanzania//Makame//0807WF//MK_vrf_vsurf_class_0807.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
 
+# Class Probibility Raster
 vrf.class.probs<-terra::predict(vsurf_norm, vrf ,type = 'prob', na.rm = TRUE)
-writeRaster(vrf.class.probs, "C://GIS//Tanzania//Makame//0802WF//MK_vrf_vsurf_probs_0804.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
-###
-vsvm.class<-terra::predict(vsurf_norm, vsvm, na.rm = TRUE)
 
-writeRaster(vsvm.class, "C://GIS//Tanzania//Makame//0802WF//MK_vsvm_vsurf_class_0802.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
-
-vsvm.class.probs<-terra::predict(vsurf_norm, vsvm ,type = 'prob', na.rm = TRUE)
-writeRaster(vsvm.class.probs, "C://GIS//Tanzania//Makame//0802WF//MK_vsvm_vsurf_probs_0802.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
-
-start.time<-Sys.time()
-vmlp.class<-terra::predict(vsurf_norm, mlp.50.50, na.rm = TRUE)
-end.time<-Sys.time()
-vmlp.class.encode<-encodeClassLabels(vlmp.class)
-writeRaster(vmlp.class, "C://GIS//Tanzania//Makame//0802WF//MK_mlp_50.50_vsurf_class_0802.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
-
-vmlp.class.probs<-terra::predict(vsurf_norm, vlmp ,type = 'prob', na.rm = TRUE)
-writeRaster(vrf.class.probs, "C://GIS//Tanzania//Makame//0802WF//MK_vmlp_vsurf_probs_0802.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
+writeRaster(vrf.class.probs, "C://GIS//Tanzania//Makame//0807WF//MK_vrf_vsurf_probs_0807.tif", gdal=c("COMPRESS=DEFLATE","PREDICTOR=2"))
